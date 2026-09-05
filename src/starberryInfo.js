@@ -1,10 +1,10 @@
 const bot = require("./bot");
 const config = require("./cfg");
-const { StarberryCaptureService } = require("./starberryCapture");
+const { StarberryDataService, SITE_URL } = require("./starberryData");
 
-const SITE_URL = process.env.STARBERRY_SITE_URL || "https://starberrysmp.com";
 const STARBERRY_DESCRIPTION_PREFIX = "Starberry:";
 const STRING_OPTION = 3;
+const EMBED_COLOR = 0xE56F86;
 
 const INFO_COMMANDS = [
   { name: "alts", description: `${STARBERRY_DESCRIPTION_PREFIX} Show the alternate-account rule.` },
@@ -110,16 +110,6 @@ function commandFromInteraction(interaction) {
   }
 }
 
-function captureUrl(command) {
-  const url = new URL(SITE_URL);
-  url.pathname = "/";
-  url.search = "";
-  url.hash = "";
-  url.searchParams.set("capture", command.type);
-  if (command.item) url.searchParams.set("item", command.item);
-  return url.toString();
-}
-
 function guideUrl(command) {
   const paths = {
     rule: "/rules/",
@@ -144,6 +134,7 @@ function sourceButton(url) {
 function helpPayload() {
   return {
     embeds: [{
+      color: EMBED_COLOR,
       title: "🍓 StarberrySMP Information Commands",
       description: "Quick answers powered by the live StarberrySMP Forest Guide.",
       fields: [
@@ -157,24 +148,22 @@ function helpPayload() {
         { name: "/bank", value: "Bank information", inline: true },
         { name: "/rank <rank>", value: "Seed through Starfruit", inline: true },
       ],
-      footer: { text: "StarberrySMP · starberrysmp.com" },
+      footer: { text: "StarberrySMP · Forest Guide" },
     }],
     components: sourceButton(new URL("/", SITE_URL).toString()),
     allowedMentions: { everyone: false, roles: false, users: false },
   };
 }
 
-function fallbackPayload(command, error) {
+function unavailablePayload(command) {
   const url = guideUrl(command);
-  const details = process.env.NODE_ENV === "development" && error
-    ? `\n\nRender error: \`${String(error.message || error).slice(0, 300)}\``
-    : "";
-
   return {
     embeds: [{
+      color: EMBED_COLOR,
       title: "🍓 StarberrySMP Forest Guide",
-      description: `I couldn't render the image card, but the live guide is still available below.${details}`,
+      description: "I couldn't load the live Forest Guide data just now. You can still open the guide below.",
       url,
+      footer: { text: "StarberrySMP · Forest Guide" },
     }],
     components: sourceButton(url),
     allowedMentions: { everyone: false, roles: false, users: false },
@@ -245,13 +234,17 @@ async function syncCommands(enabledByGuild) {
 }
 
 function initStarberryInfo() {
-  const captures = new StarberryCaptureService({ cacheMinutes: 10 });
+  const data = new StarberryDataService();
   const enabledByGuild = new Map();
 
   bot.once("ready", () => {
     syncCommands(enabledByGuild).catch(err => {
       console.error(`[STARBERRY INFO] Slash-command sync failed: ${err.stack || err}`);
     });
+
+    data.warm()
+      .then(() => console.log("[STARBERRY INFO] Live Forest Guide data cached."))
+      .catch(err => console.warn(`[STARBERRY INFO] Initial Forest Guide cache failed: ${err.message}`));
   });
 
   bot.on("interactionCreate", async interaction => {
@@ -272,37 +265,24 @@ function initStarberryInfo() {
     const command = commandFromInteraction(interaction);
     if (! command) return;
 
-    try {
-      await interaction.defer();
-    } catch (err) {
-      console.warn(`[STARBERRY INFO] Could not defer /${interaction.data.name}: ${err.message}`);
-      return;
-    }
-
-    const cardUrl = captureUrl(command);
     const liveGuide = guideUrl(command);
 
     try {
-      const buffer = await captures.screenshot(cardUrl);
-      await interaction.editMessage(
-        "@original",
-        {
-          content: "",
+      const embed = await data.buildEmbed(command, liveGuide);
+      const payload = embed
+        ? {
+          embeds: [embed],
           components: sourceButton(liveGuide),
           allowedMentions: { everyone: false, roles: false, users: false },
-        },
-        {
-          file: buffer,
-          name: `starberry-${command.type}${command.item ? `-${command.item.replace(/\s+/g, "-")}` : ""}.png`,
-        },
-      );
+        }
+        : unavailablePayload(command);
+
+      await interaction.createMessage(payload);
     } catch (err) {
-      console.warn(`[STARBERRY INFO] Screenshot failed for ${cardUrl}: ${err.message}`);
-      await interaction.editMessage("@original", fallbackPayload(command, err)).catch(console.warn);
+      console.warn(`[STARBERRY INFO] Failed to answer /${interaction.data.name}: ${err.message}`);
+      await interaction.createMessage(unavailablePayload(command)).catch(console.warn);
     }
   });
-
-  process.once("beforeExit", () => captures.close());
 }
 
 module.exports = { initStarberryInfo };
