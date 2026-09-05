@@ -6,6 +6,7 @@ const { getOrFetchChannel } = require("../utils");
 const STATUS_ACTIVE = "active";
 const STATUS_COMPLETED = "completed";
 const STATUS_CANCELLED = "cancelled";
+const VIEW_CHANNEL_PERMISSION = "1024";
 
 function normalizeQuestions(value) {
   let questions = value || [];
@@ -44,6 +45,7 @@ function getApplicationDefinitions(config) {
   const applicationConfig = config.applications || {};
   const definitions = {};
   const sharedStartRoles = normalizeStringArray(applicationConfig.startRoles);
+  const sharedReviewRoles = normalizeStringArray(applicationConfig.reviewRoles);
   const rawTypes = applicationConfig.types;
 
   if (rawTypes && typeof rawTypes === "object" && ! Array.isArray(rawTypes)) {
@@ -53,6 +55,9 @@ function getApplicationDefinitions(config) {
       const key = rawKey.trim().toLowerCase();
       if (! key) continue;
 
+      const typeStartRoles = normalizeStringArray(rawDefinition.startRoles);
+      const typeReviewRoles = normalizeStringArray(rawDefinition.reviewRoles);
+
       definitions[key] = {
         key,
         name: rawDefinition.name || `${toDisplayName(key)} Application`,
@@ -60,9 +65,8 @@ function getApplicationDefinitions(config) {
         introMessage: rawDefinition.introMessage || applicationConfig.introMessage,
         completionMessage: rawDefinition.completionMessage || applicationConfig.completionMessage,
         questions: normalizeQuestions(rawDefinition.questions || applicationConfig.questions),
-        startRoles: normalizeStringArray(rawDefinition.startRoles).length
-          ? normalizeStringArray(rawDefinition.startRoles)
-          : sharedStartRoles,
+        startRoles: typeStartRoles.length ? typeStartRoles : sharedStartRoles,
+        reviewRoles: typeReviewRoles.length ? typeReviewRoles : sharedReviewRoles,
       };
     }
   }
@@ -78,6 +82,7 @@ function getApplicationDefinitions(config) {
       completionMessage: applicationConfig.completionMessage,
       questions: normalizeQuestions(applicationConfig.questions),
       startRoles: sharedStartRoles,
+      reviewRoles: sharedReviewRoles,
     };
   }
 
@@ -163,6 +168,37 @@ module.exports = ({ bot, knex, config, commands, hooks }) => {
     });
   }
 
+  async function lockPermissionsToReviewRoles(thread, channel, reviewRoles) {
+    const guildId = (channel.guild && channel.guild.id) || config.inboxServerId;
+    const uniqueReviewRoles = Array.from(new Set(reviewRoles))
+      .filter(roleId => roleId && roleId !== guildId);
+
+    const permissionOverwrites = [
+      {
+        id: guildId,
+        type: 0,
+        allow: "0",
+        deny: VIEW_CHANNEL_PERMISSION,
+      },
+      ...uniqueReviewRoles.map(roleId => ({
+        id: roleId,
+        type: 0,
+        allow: VIEW_CHANNEL_PERMISSION,
+        deny: "0",
+      })),
+      {
+        id: bot.user.id,
+        type: 1,
+        allow: VIEW_CHANNEL_PERMISSION,
+        deny: "0",
+      },
+    ];
+
+    await bot.requestHandler.request("PATCH", Routes.channel(thread.channel_id), true, {
+      permission_overwrites: permissionOverwrites,
+    });
+  }
+
   async function restoreChannel(thread, application) {
     const originalPermissions = parseJson(application.original_permissions, []);
 
@@ -232,8 +268,8 @@ module.exports = ({ bot, knex, config, commands, hooks }) => {
       return;
     }
 
-    if (! definition.categoryId) {
-      await thread.postSystemMessage(`The **${definition.name}** is missing a configured category ID.`);
+    if (! definition.categoryId && definition.reviewRoles.length === 0) {
+      await thread.postSystemMessage(`The **${definition.name}** needs either a category ID or at least one review role configured.`);
       return;
     }
 
@@ -257,10 +293,13 @@ module.exports = ({ bot, knex, config, commands, hooks }) => {
     }
 
     const channel = await getOrFetchChannel(bot, thread.channel_id);
-    const category = bot.getChannel(definition.categoryId);
-    if (! category || ! (category instanceof Eris.CategoryChannel)) {
-      await thread.postSystemMessage(`The category configured for **${definition.name}** could not be found or is not a category.`);
-      return;
+    let category = null;
+    if (definition.categoryId) {
+      category = bot.getChannel(definition.categoryId);
+      if (! category || ! (category instanceof Eris.CategoryChannel)) {
+        await thread.postSystemMessage(`The category configured for **${definition.name}** could not be found or is not a category.`);
+        return;
+      }
     }
 
     const originalPermissions = Array.from(channel.permissionOverwrites.map(ow => ({
@@ -286,8 +325,15 @@ module.exports = ({ bot, knex, config, commands, hooks }) => {
     });
 
     try {
-      await bot.editChannel(thread.channel_id, { parentID: category.id });
-      await syncPermissionsFromCategory(thread, category);
+      if (category && channel.parentID !== category.id) {
+        await bot.editChannel(thread.channel_id, { parentID: category.id });
+      }
+
+      if (definition.reviewRoles.length > 0) {
+        await lockPermissionsToReviewRoles(thread, channel, definition.reviewRoles);
+      } else if (category) {
+        await syncPermissionsFromCategory(thread, category);
+      }
     } catch (err) {
       await knex("applications").where("id", insertedIds[0]).delete();
       await thread.postSystemMessage(`Failed to lock the application ticket: ${err.message}`);
@@ -298,7 +344,12 @@ module.exports = ({ bot, knex, config, commands, hooks }) => {
       || `🍓 **${definition.name}**\n\nStaff have started an application with you. I’ll ask the questions one at a time here in DMs. Please answer each question in a single text message.`;
 
     await thread.sendSystemMessageToUser(intro);
-    await thread.postSystemMessage(`🔒 **${definition.name} started by <@${msg.author.id}>.** Ticket moved to its application category and synced to that category's role permissions.`, {
+
+    const lockDescription = definition.reviewRoles.length > 0
+      ? "Ticket visibility is now restricted to this application's configured review roles."
+      : "Ticket moved to its application category and synced to that category's role permissions.";
+
+    await thread.postSystemMessage(`🔒 **${definition.name} started by <@${msg.author.id}>.** ${lockDescription}`, {
       allowedMentions: { users: [msg.author.id] },
     });
     await sendQuestion(thread, definition.name, definition.questions, 0);
