@@ -97,6 +97,7 @@ try {
   require("./cfg");
   const main = require("./main");
   const knex = require("./knex");
+  const { initStarberryInfo } = require("./starberryInfo");
 
   // Make sure the database is up to date
   const [completed, newMigrations] = await knex.migrate.list();
@@ -105,6 +106,9 @@ try {
     await knex.migrate.latest();
     console.log("Done!");
   }
+
+  // Start Starberry's informational slash commands before connecting to Discord.
+  initStarberryInfo();
 
   // Start the bot
   main.start();
