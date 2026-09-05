@@ -8,9 +8,14 @@ const STATUS_COMPLETED = "completed";
 const STATUS_CANCELLED = "cancelled";
 
 function getQuestions(config) {
-  const questions = config.applications && Array.isArray(config.applications.questions)
-    ? config.applications.questions
-    : [];
+  if (! config.applications) return [];
+
+  let questions = config.applications.questions || [];
+  if (typeof questions === "string") {
+    questions = questions.split("||");
+  }
+
+  if (! Array.isArray(questions)) return [];
 
   return questions
     .map(question => typeof question === "string" ? question.trim() : "")
@@ -27,7 +32,7 @@ function parseJson(value, fallback) {
   }
 }
 
-module.exports = ({ bot, knex, config, commands, hooks, threads }) => {
+module.exports = ({ bot, knex, config, commands, hooks }) => {
   if (! config.applications || config.applications.enabled === false) return;
 
   const questions = getQuestions(config);
@@ -99,7 +104,7 @@ module.exports = ({ bot, knex, config, commands, hooks, threads }) => {
       || "🍓 **Application complete!** Thank you for answering every question. Your application is now waiting for staff review.";
 
     await thread.sendSystemMessageToUser(completionMessage);
-    await thread.postSystemMessage("🔒 **Application completed.** This ticket will remain restricted until staff use `!apply unlock`.");
+    await thread.postSystemMessage(`🔒 **Application completed.** This ticket will remain restricted until staff use \`${config.prefix}apply unlock\`.`);
   }
 
   commands.addInboxThreadCommand("apply start", [], async (msg, args, thread) => {
@@ -116,6 +121,12 @@ module.exports = ({ bot, knex, config, commands, hooks, threads }) => {
     const active = await findActiveApplication(thread.id);
     if (active) {
       await thread.postSystemMessage(`An application is already active on this ticket (question ${active.current_question + 1}/${questions.length}).`);
+      return;
+    }
+
+    const previousApplication = await findLatestApplication(thread.id);
+    if (previousApplication && ! previousApplication.unlocked_at) {
+      await thread.postSystemMessage(`The previous application ticket is still restricted. Use \`${config.prefix}apply unlock\` before starting another application.`);
       return;
     }
 
@@ -158,7 +169,7 @@ module.exports = ({ bot, knex, config, commands, hooks, threads }) => {
       || "🍓 **Starberry Staff Application**\n\nStaff have started an application with you. I’ll ask the questions one at a time here in DMs. Please answer each question in a single text message.";
 
     await thread.sendSystemMessageToUser(intro);
-    await thread.postSystemMessage(`🔒 **Application started by <@${msg.author.id}>.** Ticket moved to <#${category.id}> and synced to that category's role permissions.`, {
+    await thread.postSystemMessage(`🔒 **Application started by <@${msg.author.id}>.** Ticket moved to the application category and synced to that category's role permissions.`, {
       allowedMentions: { users: [msg.author.id] },
     });
     await sendQuestion(thread, 0);
@@ -196,7 +207,7 @@ module.exports = ({ bot, knex, config, commands, hooks, threads }) => {
     }
 
     if (application.status === STATUS_ACTIVE) {
-      await thread.postSystemMessage("The application is still active. Use `!apply stop` if you want to cancel it and restore the normal ticket permissions.");
+      await thread.postSystemMessage(`The application is still active. Use \`${config.prefix}apply stop\` if you want to cancel it and restore the normal ticket permissions.`);
       return;
     }
 
