@@ -116,6 +116,11 @@ module.exports = {
   },
 
   async loadPlugins(plugins, pluginApi) {
+    // Applications are a built-in Starberry extension. It is loaded only when configured.
+    if (config.applications && config.applications.enabled !== false) {
+      await pluginSources.file.load("./src/modules/applications", pluginApi);
+    }
+
     for (const pluginName of plugins) {
       const { source, plugin } = splitPluginSource(pluginName);
       await pluginSources[source].load(plugin, pluginApi);
