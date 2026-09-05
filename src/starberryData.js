@@ -79,6 +79,18 @@ function baseEmbed(title, description, url) {
   };
 }
 
+function listEmbed(title, items, url, hint) {
+  const description = [
+    hint,
+    "",
+    items.map(item => `${item.icon || "✦"} **${item.name}**`).join("\n"),
+  ].filter(Boolean).join("\n");
+
+  const embed = baseEmbed(title, description, url);
+  embed.fields = [{ name: "Total", value: String(items.length), inline: true }];
+  return embed;
+}
+
 class StarberryDataService {
   constructor({ cacheMs = CACHE_MS } = {}) {
     this.cacheMs = cacheMs;
@@ -124,17 +136,14 @@ class StarberryDataService {
 
   async get(name) {
     const hit = this.cache.get(name);
-    if (hit) {
-      if (Date.now() - hit.fetchedAt > this.cacheMs) this.refresh(name);
-      return hit.data;
-    }
+    if (hit && Date.now() - hit.fetchedAt <= this.cacheMs) return hit.data;
 
-    // Keep first-use latency low enough for Discord's interaction timeout.
     const timeout = new Promise(resolve => setTimeout(() => resolve(null), 1500));
-    return Promise.race([this.refresh(name), timeout]);
+    const refreshed = await Promise.race([this.refresh(name), timeout]);
+    return refreshed || hit?.data || null;
   }
 
-  findRule(pages, query) {
+  collectRules(pages) {
     const sections = pages?.rules?.sections || [];
     const rules = [];
 
@@ -156,6 +165,11 @@ class StarberryDataService {
       }
     }
 
+    return rules;
+  }
+
+  findRule(pages, query) {
+    const rules = this.collectRules(pages);
     const wanted = RULE_ALIASES[query] || slug(query);
     return rules.find(rule => rule.key === wanted)
       || rules.find(rule => rule.key.includes(wanted))
@@ -172,6 +186,18 @@ class StarberryDataService {
         const embed = baseEmbed(`📜 ${rule.heading}`, rule.body, guideUrl);
         embed.fields = [{ name: "Section", value: limit(rule.section), inline: true }];
         return embed;
+      }
+
+      case "rules": {
+        const pages = await this.get("pages");
+        if (! pages) return null;
+        const rules = this.collectRules(pages);
+        return listEmbed(
+          "📜 StarberrySMP Rules",
+          rules.map(rule => ({ name: rule.heading, icon: "✦" })),
+          guideUrl,
+          "Use `/rule <rule>` for the full wording of a specific rule.",
+        );
       }
 
       case "join": {
@@ -201,6 +227,17 @@ class StarberryDataService {
         return embed;
       }
 
+      case "skills": {
+        const skills = await this.get("skills");
+        if (! skills) return null;
+        return listEmbed(
+          "⭐ Starberry Skills",
+          skills,
+          guideUrl,
+          "Use `/skill <skill>` to view one skill in detail.",
+        );
+      }
+
       case "crop": {
         const crops = await this.get("crops");
         if (! crops) return null;
@@ -214,6 +251,17 @@ class StarberryDataService {
           { name: "Used For", value: limit(Array.isArray(crop.uses) ? crop.uses.join(", ") : crop.uses), inline: false },
         ];
         return embed;
+      }
+
+      case "crops": {
+        const crops = await this.get("crops");
+        if (! crops) return null;
+        return listEmbed(
+          "🌱 Starberry Custom Crops",
+          crops,
+          guideUrl,
+          "Use `/crop <crop>` to view growth, harvest, lore, and uses.",
+        );
       }
 
       case "food": {
@@ -234,6 +282,17 @@ class StarberryDataService {
           },
         ];
         return embed;
+      }
+
+      case "foods": {
+        const foods = await this.get("foods");
+        if (! foods) return null;
+        return listEmbed(
+          "🍽️ Starberry Foods & Recipes",
+          foods,
+          guideUrl,
+          "Use `/food <food>` to view a recipe and ingredient details.",
+        );
       }
 
       case "economy": {
@@ -273,6 +332,23 @@ class StarberryDataService {
           { name: "QuickShops", value: String(rank.quickshop_limit ?? "—"), inline: true },
           { name: "Perks", value: limit((rank.perks || []).map(perk => `✦ ${perk}`).join("\n")) },
         ];
+        return embed;
+      }
+
+      case "ranks": {
+        const ranks = await this.get("ranks");
+        if (! ranks) return null;
+        const embed = listEmbed(
+          "🍓 Starberry Ranks",
+          ranks,
+          guideUrl,
+          "Use `/rank <rank>` to view homes, QuickShop limits, and perks.",
+        );
+        embed.fields = ranks.map(rank => ({
+          name: `${rank.icon || "✦"} ${rank.name}`,
+          value: `${rank.type} · ${rank.home_limit ?? "—"} homes · ${rank.quickshop_limit ?? "—"} shops`,
+          inline: false,
+        }));
         return embed;
       }
 
