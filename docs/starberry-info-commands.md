@@ -1,47 +1,74 @@
 # Starberry informational slash commands
 
-Starling combines Modmail/applications with public StarberrySMP information commands.
+Starling combines Modmail/applications with public StarberrySMP information commands, but the informational system is now website-driven.
 
-## Commands
+## API-driven architecture
 
-- `/alts` — alternate-account rule
-- `/rules` — list all server rules
-- `/rule <rule>` — server rule by name or keyword
-- `/join` — Java and Bedrock joining information
-- `/skills` — list all skills
-- `/skill <skill>` — Farming, Mining, Foraging, or Fishing
-- `/crops` — list all custom crops
-- `/crop <crop>` — custom crop information
-- `/foods` — list all custom foods and recipes
-- `/food <food>` — custom food / recipe information
-- `/economy` — economy overview
-- `/bank` — bank information
-- `/ranks` — list all player ranks
-- `/rank <rank>` — Seed, Sprout, Bloom, Berry, or Starfruit
-- `/help` — informational command list
+Starling no longer stores Starberry rules, crops, foods, ranks, skills, economy details, server details, command lists, or embed layouts in the bot repository.
 
-Commands are registered as guild slash commands on every configured `mainServerId`, so they should appear shortly after Starling starts.
+Instead it loads the public manifest from:
 
-## Website integration
+`https://starberrysmp.com/api/v1/manifest.json`
 
-The live website remains the source of truth. Starling reads the public JSON data under `https://starberrysmp.com/data/` and turns it into native Discord embeds.
+That manifest tells Starling:
 
-Website data is cached for five minutes for fast responses. Once a cached dataset becomes stale, the next command attempts to refresh it from the live website before replying. This means changes to crops, foods, ranks, skills, rules, economy information, and server information flow into Discord automatically after the updated website data has deployed. A bot restart is not required for content-only changes.
+- which slash commands should exist
+- which website resource each command should query
+- which options use autocomplete
+- how list/detail responses should be rendered
+- which Forest Guide page to link to
+- Starberry embed branding
 
-Slash-command names and command structure are bot code, so adding or removing commands still requires a Starling code update/restart.
+The manifest then points to the existing website JSON under `/data/`.
 
-Set `STARBERRY_SITE_URL` only if the website base URL changes.
+## Automatic updates
+
+Content changes are automatic. If a crop, food, rank, skill, rule, economy value, or server value changes on the website, Starling reads the updated website data when the command is used.
+
+Starling keeps resource responses only in a very short-lived RAM cache (currently 15 seconds) to avoid repeated requests during autocomplete. Nothing from the Forest Guide API is persisted to disk.
+
+Command structure is automatic too. Starling checks the API manifest periodically (currently every 5 minutes). If a command is added, changed, or removed in the website manifest, Starling syncs Discord's slash commands without needing a source-code change or restart.
+
+## Current commands
+
+The current manifest defines:
+
+- `/alts`
+- `/rules` and `/rule <rule>`
+- `/join`
+- `/skills` and `/skill <skill>`
+- `/crops` and `/crop <crop>`
+- `/foods` and `/food <food>`
+- `/economy` and `/bank`
+- `/ranks` and `/rank <rank>`
+- `/help`
+
+Detail commands use live autocomplete from the matching website resource. New crops, foods, ranks, skills, and rules therefore become searchable without editing Starling.
+
+## Adding future information
+
+For normal entries such as a new crop or food, edit the matching website `/data/*.json` file only.
+
+For a new type of informational slash command, add it to `/api/v1/manifest.json`. Starling supports generic `list`, `lookup`, `object`, and `help` command modes plus manifest-defined embed fields/templates.
+
+The API format is documented in the website repository under `api/README.md`.
 
 ## Interaction reliability
 
-Starling acknowledges informational slash commands immediately and then edits the original interaction response after loading the requested Forest Guide data. This prevents Discord's `The application did not respond` timeout while the website is being contacted.
+Starling acknowledges slash commands before it performs website/API requests, then edits the original Discord response. This prevents Discord's `The application did not respond` timeout while live data is loading.
 
 ## No Chromium required
 
-The informational commands no longer use Puppeteer or Chromium. This avoids missing Linux-library errors on Bloom and keeps the commands lightweight.
+The informational commands do not use Puppeteer or Chromium. Do not add `puppeteer` to Bloom's **Additional Node Packages** field, and no `CHROMIUM_EXECUTABLE_PATH` is required.
 
-You do not need `puppeteer` in Bloom's **Additional Node Packages** field, and you do not need `CHROMIUM_EXECUTABLE_PATH`.
+If Puppeteer was previously installed on Bloom, remove it from Additional Node Packages. Its downloaded Chrome cache can also be deleted from the server files to reclaim disk space.
 
-## Discord bot authorization
+## Optional overrides
 
-The bot needs the `applications.commands` scope in addition to the normal `bot` scope for slash commands to be available. Existing permissions such as Send Messages and Embed Links should remain enabled.
+`STARBERRY_SITE_URL` changes the website base URL.
+
+`STARBERRY_API_MANIFEST` can point Starling at a different manifest URL for testing or a future API version.
+
+## Discord authorization
+
+The bot needs the `applications.commands` scope in addition to the normal bot scope. Existing permissions such as Send Messages and Embed Links should remain enabled.
