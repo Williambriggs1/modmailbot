@@ -15,6 +15,7 @@ const threads = require("./data/threads");
 const displayRoles = require("./data/displayRoles");
 const { PluginInstallationError } = require("./PluginInstallationError");
 const config = require("./cfg");
+require("./applicationsBigIntCompat");
 
 const pluginSources = {
   npm: {
