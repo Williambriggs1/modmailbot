@@ -5,13 +5,18 @@ Starling combines Modmail/applications with public StarberrySMP information comm
 ## Commands
 
 - `/alts` — alternate-account rule
+- `/rules` — list all server rules
 - `/rule <rule>` — server rule by name or keyword
 - `/join` — Java and Bedrock joining information
+- `/skills` — list all skills
 - `/skill <skill>` — Farming, Mining, Foraging, or Fishing
+- `/crops` — list all custom crops
 - `/crop <crop>` — custom crop information
+- `/foods` — list all custom foods and recipes
 - `/food <food>` — custom food / recipe information
 - `/economy` — economy overview
 - `/bank` — bank information
+- `/ranks` — list all player ranks
 - `/rank <rank>` — Seed, Sprout, Bloom, Berry, or Starfruit
 - `/help` — informational command list
 
@@ -21,9 +26,15 @@ Commands are registered as guild slash commands on every configured `mainServerI
 
 The live website remains the source of truth. Starling reads the public JSON data under `https://starberrysmp.com/data/` and turns it into native Discord embeds.
 
-The website data is cached for a few minutes for fast responses and refreshed automatically as commands are used. This means website content changes still flow into Discord without needing to duplicate the information in the bot.
+Website data is cached for five minutes for fast responses. Once a cached dataset becomes stale, the next command attempts to refresh it from the live website before replying. This means changes to crops, foods, ranks, skills, rules, economy information, and server information flow into Discord automatically after the updated website data has deployed. A bot restart is not required for content-only changes.
+
+Slash-command names and command structure are bot code, so adding or removing commands still requires a Starling code update/restart.
 
 Set `STARBERRY_SITE_URL` only if the website base URL changes.
+
+## Interaction reliability
+
+Starling acknowledges informational slash commands immediately and then edits the original interaction response after loading the requested Forest Guide data. This prevents Discord's `The application did not respond` timeout while the website is being contacted.
 
 ## No Chromium required
 
