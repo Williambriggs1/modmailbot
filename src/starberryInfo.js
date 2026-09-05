@@ -8,6 +8,7 @@ const EMBED_COLOR = 0xE56F86;
 
 const INFO_COMMANDS = [
   { name: "alts", description: `${STARBERRY_DESCRIPTION_PREFIX} Show the alternate-account rule.` },
+  { name: "rules", description: `${STARBERRY_DESCRIPTION_PREFIX} List the StarberrySMP server rules.` },
   {
     name: "rule",
     description: `${STARBERRY_DESCRIPTION_PREFIX} Show a StarberrySMP server rule.`,
@@ -19,6 +20,7 @@ const INFO_COMMANDS = [
     }],
   },
   { name: "join", description: `${STARBERRY_DESCRIPTION_PREFIX} Show Java and Bedrock joining information.` },
+  { name: "skills", description: `${STARBERRY_DESCRIPTION_PREFIX} List all Starberry skills.` },
   {
     name: "skill",
     description: `${STARBERRY_DESCRIPTION_PREFIX} Show information about a Starberry skill.`,
@@ -35,6 +37,7 @@ const INFO_COMMANDS = [
       ],
     }],
   },
+  { name: "crops", description: `${STARBERRY_DESCRIPTION_PREFIX} List all custom crops.` },
   {
     name: "crop",
     description: `${STARBERRY_DESCRIPTION_PREFIX} Show information about a custom crop.`,
@@ -45,6 +48,7 @@ const INFO_COMMANDS = [
       required: true,
     }],
   },
+  { name: "foods", description: `${STARBERRY_DESCRIPTION_PREFIX} List all custom foods and recipes.` },
   {
     name: "food",
     description: `${STARBERRY_DESCRIPTION_PREFIX} Show a custom food or recipe.`,
@@ -57,6 +61,7 @@ const INFO_COMMANDS = [
   },
   { name: "economy", description: `${STARBERRY_DESCRIPTION_PREFIX} Show the Starberry economy overview.` },
   { name: "bank", description: `${STARBERRY_DESCRIPTION_PREFIX} Show the current Starberry bank information.` },
+  { name: "ranks", description: `${STARBERRY_DESCRIPTION_PREFIX} List all Starberry player ranks.` },
   {
     name: "rank",
     description: `${STARBERRY_DESCRIPTION_PREFIX} Show information about a player rank.`,
@@ -78,6 +83,7 @@ const INFO_COMMANDS = [
 ];
 
 const INFO_COMMAND_NAMES = new Set(INFO_COMMANDS.map(command => command.name));
+const CONFIGURED_GUILDS = new Set(config.mainServerId || []);
 
 function clean(value) {
   return String(value || "")
@@ -98,13 +104,18 @@ function getOption(interaction, name) {
 function commandFromInteraction(interaction) {
   switch (interaction.data.name) {
     case "alts": return { type: "rule", item: "alts" };
+    case "rules": return { type: "rules", item: "" };
     case "rule": return { type: "rule", item: getOption(interaction, "rule") };
     case "join": return { type: "join", item: "" };
+    case "skills": return { type: "skills", item: "" };
     case "skill": return { type: "skill", item: getOption(interaction, "skill") };
+    case "crops": return { type: "crops", item: "" };
     case "crop": return { type: "crop", item: getOption(interaction, "crop") };
+    case "foods": return { type: "foods", item: "" };
     case "food": return { type: "food", item: getOption(interaction, "food") };
     case "economy": return { type: "economy", item: "" };
     case "bank": return { type: "bank", item: "" };
+    case "ranks": return { type: "ranks", item: "" };
     case "rank": return { type: "rank", item: getOption(interaction, "rank") };
     default: return null;
   }
@@ -113,13 +124,18 @@ function commandFromInteraction(interaction) {
 function guideUrl(command) {
   const paths = {
     rule: "/rules/",
+    rules: "/rules/",
     join: "/join/",
     skill: "/skills/",
+    skills: "/skills/",
     crop: "/crops/",
+    crops: "/crops/",
     food: "/food/",
+    foods: "/food/",
     economy: "/economy/",
     bank: "/economy/",
     rank: "/ranks/",
+    ranks: "/ranks/",
   };
   return new URL(paths[command.type] || "/", SITE_URL).toString();
 }
@@ -138,15 +154,13 @@ function helpPayload() {
       title: "🍓 StarberrySMP Information Commands",
       description: "Quick answers powered by the live StarberrySMP Forest Guide.",
       fields: [
-        { name: "/alts", value: "Alternate-account rule", inline: true },
-        { name: "/rule <rule>", value: "Server rules", inline: true },
-        { name: "/join", value: "Java & Bedrock join info", inline: true },
-        { name: "/skill <skill>", value: "Farming, Mining, Foraging, Fishing", inline: true },
-        { name: "/crop <crop>", value: "Custom crops", inline: true },
-        { name: "/food <food>", value: "Foods and recipes", inline: true },
-        { name: "/economy", value: "Economy overview", inline: true },
-        { name: "/bank", value: "Bank information", inline: true },
-        { name: "/rank <rank>", value: "Seed through Starfruit", inline: true },
+        { name: "/alts · /rules · /rule", value: "Alternate-account rule, rule list, and individual rule details", inline: false },
+        { name: "/join", value: "Java & Bedrock join information", inline: true },
+        { name: "/skills · /skill", value: "List skills or view one skill", inline: true },
+        { name: "/crops · /crop", value: "List crops or view one crop", inline: true },
+        { name: "/foods · /food", value: "List foods or view one recipe", inline: true },
+        { name: "/economy · /bank", value: "Economy and bank information", inline: true },
+        { name: "/ranks · /rank", value: "List ranks or view one rank", inline: true },
       ],
       footer: { text: "StarberrySMP · Forest Guide" },
     }],
@@ -191,7 +205,7 @@ async function waitForGuild(guildId, timeoutMs = 15000) {
 }
 
 async function syncCommands(enabledByGuild) {
-  const guildIds = Array.from(new Set(config.mainServerId || []));
+  const guildIds = Array.from(CONFIGURED_GUILDS);
 
   for (const guildId of guildIds) {
     const guild = await waitForGuild(guildId);
@@ -235,7 +249,10 @@ async function syncCommands(enabledByGuild) {
 
 function initStarberryInfo() {
   const data = new StarberryDataService();
-  const enabledByGuild = new Map();
+  // Start permissive for our configured guilds so commands invoked during startup sync are still answered.
+  const enabledByGuild = new Map(
+    Array.from(CONFIGURED_GUILDS).map(guildId => [guildId, new Set(INFO_COMMAND_NAMES)]),
+  );
 
   bot.once("ready", () => {
     syncCommands(enabledByGuild).catch(err => {
@@ -249,21 +266,31 @@ function initStarberryInfo() {
 
   bot.on("interactionCreate", async interaction => {
     if (interaction.type !== 2 || ! interaction.data || ! INFO_COMMAND_NAMES.has(interaction.data.name)) return;
+    if (! interaction.guildID || ! CONFIGURED_GUILDS.has(interaction.guildID)) return;
 
     const enabledNames = enabledByGuild.get(interaction.guildID);
-    if (! enabledNames || ! enabledNames.has(interaction.data.name)) return;
+    if (enabledNames && ! enabledNames.has(interaction.data.name)) return;
+
+    // Acknowledge immediately so Discord never times out while live website data is being fetched.
+    try {
+      await interaction.acknowledge();
+    } catch (err) {
+      console.warn(`[STARBERRY INFO] Could not acknowledge /${interaction.data.name}: ${err.message}`);
+      return;
+    }
 
     if (interaction.data.name === "help") {
-      try {
-        await interaction.createMessage(helpPayload());
-      } catch (err) {
+      await interaction.editOriginalMessage(helpPayload()).catch(err => {
         console.warn(`[STARBERRY INFO] Failed to answer /help: ${err.message}`);
-      }
+      });
       return;
     }
 
     const command = commandFromInteraction(interaction);
-    if (! command) return;
+    if (! command) {
+      await interaction.editOriginalMessage({ content: "That Starberry command could not be resolved." }).catch(console.warn);
+      return;
+    }
 
     const liveGuide = guideUrl(command);
 
@@ -277,10 +304,10 @@ function initStarberryInfo() {
         }
         : unavailablePayload(command);
 
-      await interaction.createMessage(payload);
+      await interaction.editOriginalMessage(payload);
     } catch (err) {
       console.warn(`[STARBERRY INFO] Failed to answer /${interaction.data.name}: ${err.message}`);
-      await interaction.createMessage(unavailablePayload(command)).catch(console.warn);
+      await interaction.editOriginalMessage(unavailablePayload(command)).catch(console.warn);
     }
   });
 }
