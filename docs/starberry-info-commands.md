@@ -1,6 +1,6 @@
 # Starberry informational slash commands
 
-Starling now combines Modmail/applications with public StarberrySMP information commands.
+Starling combines Modmail/applications with public StarberrySMP information commands.
 
 ## Commands
 
@@ -19,26 +19,18 @@ Commands are registered as guild slash commands on every configured `mainServerI
 
 ## Website integration
 
-The live website remains the source of truth. Information cards are rendered from `https://starberrysmp.com/?capture=...`, so website content changes automatically flow into the Discord responses.
+The live website remains the source of truth. Starling reads the public JSON data under `https://starberrysmp.com/data/` and turns it into native Discord embeds.
+
+The website data is cached for a few minutes for fast responses and refreshed automatically as commands are used. This means website content changes still flow into Discord without needing to duplicate the information in the bot.
 
 Set `STARBERRY_SITE_URL` only if the website base URL changes.
 
-## Screenshot support
+## No Chromium required
 
-The bot tries, in order:
+The informational commands no longer use Puppeteer or Chromium. This avoids missing Linux-library errors on Bloom and keeps the commands lightweight.
 
-1. Puppeteer, if the `puppeteer` package is already installed.
-2. A system Chromium / Chrome executable.
-3. A normal Discord embed linking to the live Forest Guide if image rendering is unavailable.
-
-Common Chromium paths are detected automatically. If Bloom provides Chromium somewhere else, set:
-
-```bash
-CHROMIUM_EXECUTABLE_PATH=/path/to/chromium
-```
-
-This means lack of Chromium will not break Modmail, applications, or the informational commands; only the screenshot card falls back to a link.
+You do not need `puppeteer` in Bloom's **Additional Node Packages** field, and you do not need `CHROMIUM_EXECUTABLE_PATH`.
 
 ## Discord bot authorization
 
-The bot needs the `applications.commands` scope in addition to the normal `bot` scope for slash commands to be available. Existing permissions such as Send Messages, Embed Links, and Attach Files should remain enabled.
+The bot needs the `applications.commands` scope in addition to the normal `bot` scope for slash commands to be available. Existing permissions such as Send Messages and Embed Links should remain enabled.
