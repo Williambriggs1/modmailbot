@@ -2,6 +2,7 @@ const moment = require("moment");
 const Eris = require("eris");
 const { Routes } = require("discord-api-types/v10");
 const { getOrFetchChannel } = require("../utils");
+const { getStarberryApplicationPreset } = require("../data/starberryApplications");
 
 const STATUS_ACTIVE = "active";
 const STATUS_COMPLETED = "completed";
@@ -57,14 +58,16 @@ function getApplicationDefinitions(config) {
 
       const typeStartRoles = normalizeStringArray(rawDefinition.startRoles);
       const typeReviewRoles = normalizeStringArray(rawDefinition.reviewRoles);
+      const preset = getStarberryApplicationPreset(key, rawDefinition.name);
+      const configuredQuestions = normalizeQuestions(rawDefinition.questions || applicationConfig.questions);
 
       definitions[key] = {
         key,
-        name: rawDefinition.name || `${toDisplayName(key)} Application`,
+        name: (preset && preset.name) || rawDefinition.name || `${toDisplayName(key)} Application`,
         categoryId: rawDefinition.categoryId || applicationConfig.categoryId,
         introMessage: rawDefinition.introMessage || applicationConfig.introMessage,
         completionMessage: rawDefinition.completionMessage || applicationConfig.completionMessage,
-        questions: normalizeQuestions(rawDefinition.questions || applicationConfig.questions),
+        questions: preset ? preset.questions.slice() : configuredQuestions,
         startRoles: typeStartRoles.length ? typeStartRoles : sharedStartRoles,
         reviewRoles: typeReviewRoles.length ? typeReviewRoles : sharedReviewRoles,
       };
@@ -74,13 +77,14 @@ function getApplicationDefinitions(config) {
   // Backwards compatibility with the original single-application configuration.
   if (Object.keys(definitions).length === 0) {
     const legacyKey = String(applicationConfig.defaultType || "staff").trim().toLowerCase() || "staff";
+    const preset = getStarberryApplicationPreset(legacyKey, applicationConfig.name);
     definitions[legacyKey] = {
       key: legacyKey,
-      name: applicationConfig.name || `${toDisplayName(legacyKey)} Application`,
+      name: (preset && preset.name) || applicationConfig.name || `${toDisplayName(legacyKey)} Application`,
       categoryId: applicationConfig.categoryId,
       introMessage: applicationConfig.introMessage,
       completionMessage: applicationConfig.completionMessage,
-      questions: normalizeQuestions(applicationConfig.questions),
+      questions: preset ? preset.questions.slice() : normalizeQuestions(applicationConfig.questions),
       startRoles: sharedStartRoles,
       reviewRoles: sharedReviewRoles,
     };
